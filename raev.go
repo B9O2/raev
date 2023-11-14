@@ -23,16 +23,49 @@ type Raev struct {
 	sInits  map[string]func(kwargs map[string]Object) (ret Class, err error)
 }
 
-func (r *Raev) ValueTransfer(v any) (Object, error) {
-	return r.vTrans(v)
+func (r *Raev) ValueTransfer(value any) (obj Object, err error) {
+	obj = r.zeroObj
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = errors.New("Raev::ValueTransfer::Panic@" + fmt.Sprint(rec) + reflect.TypeOf(value).String())
+		}
+	}()
+
+	if value == nil {
+		return
+	}
+
+	v := reflect.ValueOf(value)
+
+	//already registered
+	if initF, ok := r.sInits[v.Type().String()]; ok {
+		fields := map[string]Object{}
+		for i := 0; i < v.Elem().Type().NumField(); i++ {
+			tf := v.Elem().Type().Field(i)
+			vf := v.Elem().Field(i)
+			object, err := r.ValueTransfer(vf.Interface())
+			if err != nil {
+				return nil, err
+			}
+			fields[tf.Name] = object
+		}
+		obj, err = initF(fields)
+	} else {
+		obj, err = r.vTrans(value)
+	}
+	return obj, err
 }
 
-func (r *Raev) ObjectTransfer(obj Object) (reflect.Value, error) {
+func (r *Raev) ObjectTransfer(obj Object, expected reflect.Type) (reflect.Value, error) {
 	transfer, err := r.oTrans(obj)
 	if err != nil {
 		return reflect.ValueOf(nil), err
 	}
-	return reflect.ValueOf(transfer), nil
+	if transfer != nil {
+		return reflect.ValueOf(transfer), nil
+	} else {
+		return reflect.New(expected).Elem(), nil
+	}
 }
 
 // RegisterClassTransfer 注册类转换方法
@@ -46,35 +79,29 @@ func (r *Raev) NewMethod(name string, vm reflect.Value) (Method, error) {
 		var arguments []reflect.Value
 		mret = []Object{r.zeroObj}
 		defer func() {
-			if r := recover(); r != nil {
-				err = errors.New(fmt.Sprint(r))
+			if rec := recover(); rec != nil {
+				err = errors.New("Raev::" + name + "::Panic@" + fmt.Sprint(rec))
 			}
 		}()
 
-		for _, marg := range margs {
-			value, err := r.ObjectTransfer(marg)
-			if err != nil {
-				return nil, err
-			}
-			arguments = append(arguments, value)
-		}
-		for i, arg := range arguments {
-			if !arg.IsValid() {
-				arguments[i] = reflect.New(vm.Type().In(i)).Elem()
+		l := len(margs)
+		for i := 0; i < vm.Type().NumIn(); i++ {
+			inType := vm.Type().In(i)
+			if i >= l {
+				arguments = append(arguments, reflect.New(inType).Elem())
+			} else {
+				value, err := r.ObjectTransfer(margs[i], inType)
+				if err != nil {
+					return nil, err
+				}
+				arguments = append(arguments, value)
 			}
 		}
 
-		al := len(arguments)
-		for i := 0; i < vm.Type().NumIn(); i++ {
-			if i >= al {
-				arguments = append(arguments, reflect.New(vm.Type().In(i)).Elem())
-			}
-		}
 		rets := vm.Call(arguments)
 		lr := len(rets)
 		if lr > 0 {
-			errObj := rets[lr-1]
-			if errObj.Type().Name() == "error" {
+			if errObj := rets[lr-1]; errObj.Type().Name() == "error" {
 				if !errObj.IsNil() {
 					return nil, errObj.Interface().(error)
 				} else { //is err,but nil
@@ -86,37 +113,26 @@ func (r *Raev) NewMethod(name string, vm reflect.Value) (Method, error) {
 		if len(rets) > 0 {
 			mret = []Object{}
 			for _, retV := range rets {
-				var obj Object
-				if initF, ok := r.sInits[retV.Type().String()]; ok { //already registered
-					fields := map[string]Object{}
-					for i := 0; i < retV.Elem().Type().NumField(); i++ {
-						tf := retV.Elem().Type().Field(i)
-						vf := retV.Elem().Field(i)
-						object, err := r.ValueTransfer(vf.Interface())
-						if err != nil {
-							return nil, err
-						}
-						fields[tf.Name] = object
-					}
-					obj, err = initF(fields)
-				} else {
-					obj, err = r.ValueTransfer(retV.Interface())
-				}
+				obj, err := r.ValueTransfer(retV.Interface())
 				if err != nil {
 					return nil, err
 				}
 				mret = append(mret, obj)
 			}
 		}
-
 		return
 	}
 	return r.mTrans(name, f)
 }
 
-func (r *Raev) NewClass(name string, source any, defaultArgs map[string]any) (Method, error) {
+func (r *Raev) NewClass(name string, source any, defaultArgs map[string]any) (_ Method, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = errors.New("Raev::" + name + "(class)::Panic@" + fmt.Sprint(rec))
+		}
+	}()
 	if r.cInit == nil || r.cTrans == nil {
-		return nil, errors.New("raev: the class transfer not be registered")
+		return nil, errors.New("Raev::" + name + "(class)::Panic@the class transfer not be registered")
 	}
 	if defaultArgs == nil {
 		defaultArgs = map[string]any{}
@@ -139,13 +155,17 @@ func (r *Raev) NewClass(name string, source any, defaultArgs map[string]any) (Me
 		//Set default
 		for i := 0; i < gos.NumField(); i++ {
 			tf := t.Field(i)
+			f := gos.FieldByName(tf.Name)
+			if !f.CanInterface() {
+				continue
+			}
 			if da, ok := defaultArgs[tf.Name]; ok {
-				obj, err := r.ValueTransfer(da)
-				if err != nil {
+				if obj, err := r.ValueTransfer(da); err == nil {
+					f.Set(reflect.ValueOf(da))
+					c.SetMemberVar(tf.Name, obj)
+				} else {
 					return nil, err
 				}
-				c.SetMemberVar(tf.Name, obj)
-				gos.FieldByName(tf.Name).Set(reflect.ValueOf(da))
 			} else {
 				c.SetMemberVar(tf.Name, r.zeroObj)
 			}
@@ -153,13 +173,15 @@ func (r *Raev) NewClass(name string, source any, defaultArgs map[string]any) (Me
 
 		//Set init
 		for key, obj := range kwargs {
-			if gos.FieldByName(key).IsValid() {
-				c.SetMemberVar(key, obj)
-				v, err := r.ObjectTransfer(obj)
-				if err != nil {
+			f := gos.FieldByName(key)
+			//exist and exported
+			if f.IsValid() && f.CanInterface() {
+				if v, err := r.ObjectTransfer(obj, f.Type()); err != nil {
 					return nil, err
+				} else {
+					f.Set(v)
+					c.SetMemberVar(key, obj)
 				}
-				gos.FieldByName(key).Set(v)
 			} else {
 				return nil, errors.New("<init> unnecessary argument '" + key + "'")
 			}
@@ -168,11 +190,11 @@ func (r *Raev) NewClass(name string, source any, defaultArgs map[string]any) (Me
 		for i := 0; i < pt.NumMethod(); i++ {
 			mt := pt.Method(i)
 			mv := pGos.Method(i)
-			function, err := r.NewMethod(mt.Name, mv)
-			if err != nil {
+			if function, err := r.NewMethod(mt.Name, mv); err == nil {
+				c.SetMethod(mt.Name, function)
+			} else {
 				return nil, err
 			}
-			c.SetMethod(mt.Name, function)
 		}
 		ret = c
 		return
