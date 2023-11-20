@@ -17,9 +17,9 @@ type Raev struct {
 	zeroObj Object
 	vTrans  func(value any) (Object, error)
 	oTrans  func(obj Object) (any, error)
-	mTrans  func(name string, f func(args ...Object) ([]Object, error)) (Method, error)
+	mTrans  func(f func(args ...Object) ([]Object, error)) (Method, error)
 	cInit   func(name string) (Class, error)
-	cTrans  func(name string, f func(kwargs map[string]Object) (Class, error)) (Method, error)
+	cTrans  func(f func(kwargs map[string]Object) (Class, error)) (Method, error)
 	sInits  map[string]func(kwargs map[string]Object) (ret Class, err error)
 }
 
@@ -69,18 +69,18 @@ func (r *Raev) ObjectTransfer(obj Object, expected reflect.Type) (reflect.Value,
 }
 
 // RegisterClassTransfer 注册类转换方法
-func (r *Raev) RegisterClassTransfer(classInit func(name string) (Class, error), classTransfer func(name string, f func(kwargs map[string]Object) (Class, error)) (Method, error)) {
+func (r *Raev) RegisterClassTransfer(classInit func(name string) (Class, error), classTransfer func(f func(kwargs map[string]Object) (Class, error)) (Method, error)) {
 	r.cInit = classInit
 	r.cTrans = classTransfer
 }
 
-func (r *Raev) NewMethod(name string, vm reflect.Value) (Method, error) {
+func (r *Raev) NewMethod(vm reflect.Value) (Method, error) {
 	f := func(margs ...Object) (mret []Object, err error) {
 		var arguments []reflect.Value
 		mret = []Object{r.zeroObj}
 		defer func() {
 			if rec := recover(); rec != nil {
-				err = errors.New("Raev::" + name + "::Panic@" + fmt.Sprint(rec))
+				err = errors.New("Raev::Method::Panic@" + fmt.Sprint(rec))
 			}
 		}()
 
@@ -122,7 +122,7 @@ func (r *Raev) NewMethod(name string, vm reflect.Value) (Method, error) {
 		}
 		return
 	}
-	return r.mTrans(name, f)
+	return r.mTrans(f)
 }
 
 func (r *Raev) NewClass(name string, source any, defaultArgs map[string]any) (_ Method, err error) {
@@ -190,7 +190,7 @@ func (r *Raev) NewClass(name string, source any, defaultArgs map[string]any) (_ 
 		for i := 0; i < pt.NumMethod(); i++ {
 			mt := pt.Method(i)
 			mv := pGos.Method(i)
-			if function, err := r.NewMethod(mt.Name, mv); err == nil {
+			if function, err := r.NewMethod(mv); err == nil {
 				c.SetMethod(mt.Name, function)
 			} else {
 				return nil, err
@@ -200,10 +200,10 @@ func (r *Raev) NewClass(name string, source any, defaultArgs map[string]any) (_ 
 		return
 	}
 	r.sInits[reflect.TypeOf(source).String()] = initF
-	return r.cTrans(name, initF)
+	return r.cTrans(initF)
 }
 
-func NewRaev(zero Object, objectTransfer func(Object) (any, error), valueTransfer func(any) (Object, error), methodTransfer func(string, func(...Object) ([]Object, error)) (Method, error)) *Raev {
+func NewRaev(zero Object, objectTransfer func(Object) (any, error), valueTransfer func(any) (Object, error), methodTransfer func(func(...Object) ([]Object, error)) (Method, error)) *Raev {
 	rv := &Raev{
 		sInits: map[string]func(kwargs map[string]Object) (ret Class, err error){},
 	}
