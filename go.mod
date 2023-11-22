@@ -1,4 +1,4 @@
-module github.com/B9O2/Raev
+module github.com/B9O2/raev
 
 go 1.20
 

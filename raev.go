@@ -3,7 +3,7 @@ package raev
 import (
 	"errors"
 	"fmt"
-	"github.com/B9O2/Raev/types"
+	"github.com/B9O2/raev/types"
 	"reflect"
 )
 
