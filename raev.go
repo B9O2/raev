@@ -3,43 +3,23 @@ package raev
 import (
 	"errors"
 	"fmt"
+	"github.com/B9O2/Raev/types"
 	"reflect"
 )
 
-type Object any
-type MethodInfo struct {
-	Params []reflect.Type
-	Return []reflect.Type
-}
-
-func NewMethodInfo(vm reflect.Value) MethodInfo {
-	mi := MethodInfo{}
-	for i := 0; i < vm.Type().NumIn(); i++ {
-		mi.Params = append(mi.Params, vm.Type().In(i))
-	}
-	for i := 0; i < vm.Type().NumOut(); i++ {
-		mi.Return = append(mi.Return, vm.Type().Out(i))
-	}
-	return mi
-}
-
-type Method any
-type Class interface {
-	SetMemberVar(name string, obj Object)
-	SetMethod(name string, methodInfo MethodInfo, method Method)
+type Transfer interface {
+	ToObject(any) (types.ExtendObject, error)
+	ToValue(types.ExtendObject) (any, error)
+	ToClass(string, *types.Class) (types.ExtendClass, error)
+	ToMethod(types.Method) (types.ExtendMethod, error)
 }
 
 type Raev struct {
-	zeroObj Object
-	vTrans  func(value any) (Object, error)
-	oTrans  func(obj Object) (any, error)
-	mTrans  func(mi MethodInfo, f func(args []Object) ([]Object, error)) (Method, error)
-	cInit   func(name string) (Class, error)
-	cTrans  func(f func(kwargs map[string]Object) (Class, error)) (Method, error)
-	sInits  map[string]func(kwargs map[string]Object) (ret Class, err error)
+	zeroObj types.ExtendObject
+	trans   Transfer
 }
 
-func (r *Raev) ValueTransfer(value any) (obj Object, err error) {
+func (r *Raev) ValueTransfer(value any) (obj types.ExtendObject, err error) {
 	obj = r.zeroObj
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -51,29 +31,31 @@ func (r *Raev) ValueTransfer(value any) (obj Object, err error) {
 		return
 	}
 
-	v := reflect.ValueOf(value)
+	//v := reflect.ValueOf(value)
 
-	//already registered
-	if initF, ok := r.sInits[v.Type().String()]; ok {
-		fields := map[string]Object{}
-		for i := 0; i < v.Elem().Type().NumField(); i++ {
-			tf := v.Elem().Type().Field(i)
-			vf := v.Elem().Field(i)
-			object, err := r.ValueTransfer(vf.Interface())
-			if err != nil {
-				return nil, err
+	/*
+		//already registered
+		if initF, ok := r.sInits[v.Type().String()]; ok {
+			fields := map[string]types.ExtendObject{}
+			for i := 0; i < v.Elem().Type().NumField(); i++ {
+				tf := v.Elem().Type().Field(i)
+				vf := v.Elem().Field(i)
+				object, err := r.ValueTransfer(vf.Interface())
+				if err != nil {
+					return nil, err
+				}
+				fields[tf.Name] = object
 			}
-			fields[tf.Name] = object
+			obj, err = initF(fields)
+		} else {
+			obj, err = r.vTrans(value)
 		}
-		obj, err = initF(fields)
-	} else {
-		obj, err = r.vTrans(value)
-	}
-	return obj, err
+	*/
+	return r.trans.ToObject(value)
 }
 
-func (r *Raev) ObjectTransfer(obj Object, expected reflect.Type) (reflect.Value, error) {
-	transfer, err := r.oTrans(obj)
+func (r *Raev) ObjectTransfer(obj types.ExtendObject, expected reflect.Type) (reflect.Value, error) {
+	transfer, err := r.trans.ToValue(obj)
 	if err != nil {
 		return reflect.ValueOf(nil), err
 	}
@@ -84,16 +66,27 @@ func (r *Raev) ObjectTransfer(obj Object, expected reflect.Type) (reflect.Value,
 	}
 }
 
+/*
 // RegisterClassTransfer 注册类转换方法
-func (r *Raev) RegisterClassTransfer(classInit func(name string) (Class, error), classTransfer func(f func(kwargs map[string]Object) (Class, error)) (Method, error)) {
-	r.cInit = classInit
-	r.cTrans = classTransfer
+
+	func (r *Raev) RegisterClassTransfer(classInit func(name string) (types.Class, error), classTransfer func(f func(kwargs map[string]types.ExtendObject) (types.Class, error)) (types.Method, error)) {
+		r.cInit = classInit
+		r.cTrans = classTransfer
+	}
+*/
+
+func (r *Raev) NewMethod(name string, vm reflect.Value) (types.ExtendMethod, error) {
+	method, err := r.newRawMethod(name, vm)
+	if err != nil {
+		return nil, err
+	}
+	return r.trans.ToMethod(method)
 }
 
-func (r *Raev) NewMethod(vm reflect.Value) (Method, error) {
-	f := func(margs []Object) (mret []Object, err error) {
+func (r *Raev) newRawMethod(name string, vm reflect.Value) (types.Method, error) {
+	f := func(margs []types.ExtendObject) (mret []types.ExtendObject, err error) {
 		var arguments []reflect.Value
-		mret = []Object{r.zeroObj}
+		mret = []types.ExtendObject{r.zeroObj}
 		defer func() {
 			if rec := recover(); rec != nil {
 				err = errors.New("Raev::Method::Panic@" + fmt.Sprint(rec))
@@ -127,7 +120,7 @@ func (r *Raev) NewMethod(vm reflect.Value) (Method, error) {
 		}
 
 		if len(rets) > 0 {
-			mret = []Object{}
+			mret = []types.ExtendObject{}
 			for _, retV := range rets {
 				obj, err := r.ValueTransfer(retV.Interface())
 				if err != nil {
@@ -139,95 +132,57 @@ func (r *Raev) NewMethod(vm reflect.Value) (Method, error) {
 		return
 	}
 
-	return r.mTrans(NewMethodInfo(vm), f)
+	return types.NewMethod(name, vm, f), nil
 }
 
-func (r *Raev) NewClass(name string, source any, defaultArgs map[string]any) (_ Method, err error) {
+func (r *Raev) NewClass(name string, source any) (_ types.ExtendClass, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			err = errors.New("Raev::" + name + "(class)::Panic@" + fmt.Sprint(rec))
 		}
 	}()
-	if r.cInit == nil || r.cTrans == nil {
-		return nil, errors.New("Raev::" + name + "(class)::Panic@the class transfer not be registered")
+
+	//Prepare
+	pGos := reflect.ValueOf(source)
+	if pGos.IsZero() {
+		pGos = reflect.New(reflect.TypeOf(source).Elem())
 	}
-	if defaultArgs == nil {
-		defaultArgs = map[string]any{}
+	gos := pGos.Elem()
+	pt := pGos.Type()
+	//t := pGos.Elem().Type()
+	c := types.NewClass(pGos)
+
+	//Set member vars
+	for i := 0; i < gos.NumField(); i++ {
+		field := gos.Field(i)
+		if !field.CanInterface() {
+			continue
+		}
+		if obj, err := r.ValueTransfer(field.Interface()); err == nil {
+			c.SetVar(field.String(), types.NewArgument(obj, types.NewParameter(field.Type())))
+		} else {
+			return types.Class{}, err
+		}
 	}
 
-	initF := func(kwargs map[string]Object) (ret Class, err error) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				err = errors.New(fmt.Sprint(rec))
-			}
-		}()
-		pGos := reflect.New(reflect.TypeOf(source).Elem())
-		c, err := r.cInit(name)
-		if err != nil {
-			return nil, err
-		}
-		pt := pGos.Type()
-		t := pGos.Elem().Type()
-		gos := pGos.Elem()
-		//Set default
-		for i := 0; i < gos.NumField(); i++ {
-			tf := t.Field(i)
-			f := gos.FieldByName(tf.Name)
-			if !f.CanInterface() {
-				continue
-			}
-			if da, ok := defaultArgs[tf.Name]; ok {
-				if obj, err := r.ValueTransfer(da); err == nil {
-					f.Set(reflect.ValueOf(da))
-					c.SetMemberVar(tf.Name, obj)
-				} else {
-					return nil, err
-				}
-			} else {
-				c.SetMemberVar(tf.Name, r.zeroObj)
-			}
-		}
+	//Set member methods
+	for i := 0; i < pt.NumMethod(); i++ {
+		mt := pt.Method(i)
+		vm := pGos.Method(i)
 
-		//Set init
-		for key, obj := range kwargs {
-			f := gos.FieldByName(key)
-			//exist and exported
-			if f.IsValid() && f.CanInterface() {
-				if v, err := r.ObjectTransfer(obj, f.Type()); err != nil {
-					return nil, err
-				} else {
-					f.Set(v)
-					c.SetMemberVar(key, obj)
-				}
-			} else {
-				return nil, errors.New("<init> unnecessary argument '" + key + "'")
-			}
+		if method, err := r.newRawMethod(mt.Name, vm); err == nil {
+			c.SetMethod(mt.Name, method)
+		} else {
+			return types.Class{}, err
 		}
-
-		for i := 0; i < pt.NumMethod(); i++ {
-			mt := pt.Method(i)
-			vm := pGos.Method(i)
-
-			if function, err := r.NewMethod(vm); err == nil {
-				c.SetMethod(mt.Name, NewMethodInfo(vm), function)
-			} else {
-				return nil, err
-			}
-		}
-		ret = c
-		return
 	}
-	r.sInits[reflect.TypeOf(source).String()] = initF
-	return r.cTrans(initF)
+
+	return r.trans.ToClass(name, &c)
 }
 
-func NewRaev(zero Object, objectTransfer func(Object) (any, error), valueTransfer func(any) (Object, error), methodTransfer func(MethodInfo, func([]Object) ([]Object, error)) (Method, error)) *Raev {
-	rv := &Raev{
-		sInits: map[string]func(kwargs map[string]Object) (ret Class, err error){},
-	}
+func NewRaev(zero types.ExtendObject, trans Transfer) *Raev {
+	rv := &Raev{}
 	rv.zeroObj = zero
-	rv.vTrans = valueTransfer
-	rv.oTrans = objectTransfer
-	rv.mTrans = methodTransfer
+	rv.trans = trans
 	return rv
 }
