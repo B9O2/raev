@@ -75,8 +75,8 @@ func (r *Raev) ObjectTransfer(obj types.ExtendObject, expected reflect.Type) (re
 	}
 */
 
-func (r *Raev) NewMethod(name string, vm reflect.Value) (types.ExtendMethod, error) {
-	method, err := r.newRawMethod(name, vm)
+func (r *Raev) NewMethod(name string, m any) (types.ExtendMethod, error) {
+	method, err := r.newRawMethod(name, reflect.ValueOf(m))
 	if err != nil {
 		return nil, err
 	}
