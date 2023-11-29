@@ -154,19 +154,20 @@ func (r *Raev) newRawClass(source any) (_ *types.Class, err error) {
 	}
 	gos := pGos.Elem()
 	pt := pGos.Type()
-	//t := pGos.Elem().Type()
+	t := pGos.Elem().Type()
 	c := types.NewClass(pGos)
 
 	//Set member vars
 	for i := 0; i < gos.NumField(); i++ {
-		field := gos.Field(i)
-		if !field.CanInterface() {
+		vf := gos.Field(i)
+		tf := t.Field(i)
+		if !vf.CanInterface() {
 			continue
 		}
-		if obj, err := r.ValueTransfer(field.Interface()); err == nil {
-			c.SetVar(field.String(), types.NewArgument(obj, types.NewParameter(field.Type())))
-		} else {
+		if obj, err := r.ValueTransfer(vf.Interface()); err != nil {
 			return nil, err
+		} else {
+			c.SetVar(tf.Name, types.NewArgument(obj, types.NewParameter(vf.Type())))
 		}
 	}
 
