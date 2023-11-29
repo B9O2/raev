@@ -31,6 +31,12 @@ func (r *Raev) ValueTransfer(value any) (obj types.ExtendObject, err error) {
 		return
 	}
 
+	if class, err := r.newRawClass(value); err != nil {
+		return r.trans.ToObject(value)
+	} else {
+		return r.trans.ToObject(class)
+	}
+
 	//v := reflect.ValueOf(value)
 
 	/*
@@ -51,7 +57,7 @@ func (r *Raev) ValueTransfer(value any) (obj types.ExtendObject, err error) {
 			obj, err = r.vTrans(value)
 		}
 	*/
-	return r.trans.ToObject(value)
+
 }
 
 func (r *Raev) ObjectTransfer(obj types.ExtendObject, expected reflect.Type) (reflect.Value, error) {
@@ -135,12 +141,7 @@ func (r *Raev) newRawMethod(name string, vm reflect.Value) (types.Method, error)
 	return types.NewMethod(name, vm, f), nil
 }
 
-func (r *Raev) NewClass(name string, source any) (_ types.ExtendClass, err error) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			err = errors.New("Raev::" + name + "(class)::Panic@" + fmt.Sprint(rec))
-		}
-	}()
+func (r *Raev) newRawClass(source any) (*types.Class, error) {
 
 	//Prepare
 	pGos := reflect.ValueOf(source)
@@ -161,7 +162,7 @@ func (r *Raev) NewClass(name string, source any) (_ types.ExtendClass, err error
 		if obj, err := r.ValueTransfer(field.Interface()); err == nil {
 			c.SetVar(field.String(), types.NewArgument(obj, types.NewParameter(field.Type())))
 		} else {
-			return types.Class{}, err
+			return nil, err
 		}
 	}
 
@@ -173,11 +174,23 @@ func (r *Raev) NewClass(name string, source any) (_ types.ExtendClass, err error
 		if method, err := r.newRawMethod(mt.Name, vm); err == nil {
 			c.SetMethod(mt.Name, method)
 		} else {
-			return types.Class{}, err
+			return nil, err
 		}
 	}
+	return &c, nil
+}
 
-	return r.trans.ToClass(name, &c)
+func (r *Raev) NewClass(name string, source any) (_ types.ExtendClass, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = errors.New("Raev::" + name + "(class)::Panic@" + fmt.Sprint(rec))
+		}
+	}()
+	c, err := r.newRawClass(source)
+	if err != nil {
+		return nil, err
+	}
+	return r.trans.ToClass(name, c)
 }
 
 func NewRaev(zero types.ExtendObject, trans Transfer) *Raev {
