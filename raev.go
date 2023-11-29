@@ -141,8 +141,12 @@ func (r *Raev) newRawMethod(name string, vm reflect.Value) (types.Method, error)
 	return types.NewMethod(name, vm, f), nil
 }
 
-func (r *Raev) newRawClass(source any) (*types.Class, error) {
-
+func (r *Raev) newRawClass(source any) (_ *types.Class, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = errors.New("Raev::RawClass::Panic@" + fmt.Sprint(rec))
+		}
+	}()
 	//Prepare
 	pGos := reflect.ValueOf(source)
 	if pGos.IsZero() {
@@ -181,11 +185,6 @@ func (r *Raev) newRawClass(source any) (*types.Class, error) {
 }
 
 func (r *Raev) NewClass(name string, source any) (_ types.ExtendClass, err error) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			err = errors.New("Raev::" + name + "(class)::Panic@" + fmt.Sprint(rec))
-		}
-	}()
 	c, err := r.newRawClass(source)
 	if err != nil {
 		return nil, err
