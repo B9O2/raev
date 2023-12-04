@@ -19,6 +19,14 @@ func (m *Method) Name() string {
 	return m.name
 }
 
+func (m *Method) SetParameters(params []Parameter) {
+	m.params = params
+}
+
+func (m *Method) SetReturnParams(params []Parameter) {
+	m.rets = params
+}
+
 func (m *Method) ReturnParams() []Parameter {
 	return m.rets
 }
