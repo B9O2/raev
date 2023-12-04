@@ -82,14 +82,14 @@ func (r *Raev) ObjectTransfer(obj types.ExtendObject, expected reflect.Type) (re
 */
 
 func (r *Raev) NewMethod(name string, m any) (types.ExtendMethod, error) {
-	method, err := r.newRawMethod(name, reflect.ValueOf(m))
+	method, err := r.NewRawMethod(name, reflect.ValueOf(m))
 	if err != nil {
 		return nil, err
 	}
 	return r.trans.ToMethod(method)
 }
 
-func (r *Raev) newRawMethod(name string, vm reflect.Value) (types.Method, error) {
+func (r *Raev) NewRawMethod(name string, vm reflect.Value) (types.Method, error) {
 	f := func(margs []types.ExtendObject) (mret []types.ExtendObject, err error) {
 		var arguments []reflect.Value
 		mret = []types.ExtendObject{r.zeroObj}
@@ -141,7 +141,7 @@ func (r *Raev) newRawMethod(name string, vm reflect.Value) (types.Method, error)
 	return types.NewMethod(name, vm, f), nil
 }
 
-func (r *Raev) newRawClass(source any) (_ *types.Class, err error) {
+func (r *Raev) newRawClass(source any, middlewares ...types.ClassMiddleware) (_ *types.Class, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			err = errors.New("Raev::RawClass::Panic@" + fmt.Sprint(rec))
@@ -176,17 +176,23 @@ func (r *Raev) newRawClass(source any) (_ *types.Class, err error) {
 		mt := pt.Method(i)
 		vm := pGos.Method(i)
 
-		if method, err := r.newRawMethod(mt.Name, vm); err == nil {
+		if method, err := r.NewRawMethod(mt.Name, vm); err == nil {
 			c.SetMethod(mt.Name, method)
 		} else {
 			return nil, err
 		}
 	}
+
+	//Handle Middlewares
+	for _, m := range middlewares {
+		m.Handle(&c)
+	}
+
 	return &c, nil
 }
 
-func (r *Raev) NewClass(name string, source any) (_ types.ExtendClass, err error) {
-	c, err := r.newRawClass(source)
+func (r *Raev) NewClass(name string, source any, middlewares ...types.ClassMiddleware) (_ types.ExtendClass, err error) {
+	c, err := r.newRawClass(source, middlewares...)
 	if err != nil {
 		return nil, err
 	}
