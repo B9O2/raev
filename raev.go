@@ -3,20 +3,25 @@ package raev
 import (
 	"errors"
 	"fmt"
-	"github.com/B9O2/raev/types"
 	"reflect"
+
+	"github.com/B9O2/raev/types"
 )
 
 type Transfer interface {
 	ToObject(any) (types.ExtendObject, error)
+	MakeSlice() types.ExtendSlice
+	AppendSlice(types.ExtendSlice, types.ExtendObject) types.ExtendSlice
+	MakeMap() types.ExtendMap
+	SetMap(types.ExtendMap, types.ExtendObject, types.ExtendObject) (types.ExtendMap, error)
 	ToValue(types.ExtendObject) (any, error)
 	ToClass(string, *types.Class) (types.ExtendClass, error)
 	ToMethod(types.Method) (types.ExtendMethod, error)
 }
 
 type Raev struct {
-	zeroObj types.ExtendObject
-	trans   Transfer
+	zeroObj       types.ExtendObject
+	trans         Transfer
 }
 
 func (r *Raev) ValueTransfer(value any) (obj types.ExtendObject, err error) {
@@ -31,10 +36,51 @@ func (r *Raev) ValueTransfer(value any) (obj types.ExtendObject, err error) {
 		return
 	}
 
-	if class, err := r.newRawClass(value); err != nil {
-		return r.trans.ToObject(value)
-	} else {
+	if class, err := r.newRawClass(value); err == nil {
 		return r.trans.ToObject(class)
+	}
+
+	// 复合类型递归反射
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.Slice:
+		if v.Len() == 0 {
+			return r.trans.MakeSlice(), nil
+		}
+		s := r.trans.MakeSlice()
+		for i := 0; i < v.Len(); i++ {
+			obj, err := r.ValueTransfer(v.Index(i).Interface())
+			if err != nil {
+				return r.zeroObj, err
+			}
+			s = r.trans.AppendSlice(s, obj)
+		}
+		return s, nil
+	case reflect.Map:
+		if v.Len() == 0 {
+			return r.trans.MakeMap(), nil
+		}
+		m := r.trans.MakeMap()
+		for iter := v.MapRange(); iter.Next(); {
+			key, err := r.ValueTransfer(iter.Key().Interface())
+			if err != nil {
+				return r.zeroObj, err
+			}
+			mv, err := r.ValueTransfer(iter.Value().Interface())
+			if err != nil {
+				return r.zeroObj, err
+			}
+			m, err = r.trans.SetMap(m, key, mv)
+			if err != nil {
+				return r.zeroObj, err
+			}
+		}
+		return m, nil
+
+	// case reflect.Chan:
+	// 	fmt.Printf("chan %v\n", v.Interface())
+	default:
+		return r.trans.ToObject(value)
 	}
 
 	//v := reflect.ValueOf(value)
@@ -71,15 +117,6 @@ func (r *Raev) ObjectTransfer(obj types.ExtendObject, expected reflect.Type) (re
 		return reflect.New(expected).Elem(), nil
 	}
 }
-
-/*
-// RegisterClassTransfer 注册类转换方法
-
-	func (r *Raev) RegisterClassTransfer(classInit func(name string) (types.Class, error), classTransfer func(f func(kwargs map[string]types.ExtendObject) (types.Class, error)) (types.Method, error)) {
-		r.cInit = classInit
-		r.cTrans = classTransfer
-	}
-*/
 
 func (r *Raev) NewMethod(name string, m any) (types.ExtendMethod, error) {
 	method, err := r.NewRawMethod(name, reflect.ValueOf(m))
@@ -198,6 +235,7 @@ func (r *Raev) NewClass(name string, source any, middlewares ...types.ClassMiddl
 	}
 	return r.trans.ToClass(name, c)
 }
+
 
 func NewRaev(zero types.ExtendObject, trans Transfer) *Raev {
 	rv := &Raev{}
