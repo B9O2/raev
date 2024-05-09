@@ -20,8 +20,8 @@ type Transfer interface {
 }
 
 type Raev struct {
-	zeroObj       types.ExtendObject
-	trans         Transfer
+	zeroObj types.ExtendObject
+	trans   Transfer
 }
 
 func (r *Raev) ValueTransfer(value any) (obj types.ExtendObject, err error) {
@@ -114,7 +114,11 @@ func (r *Raev) ObjectTransfer(obj types.ExtendObject, expected reflect.Type) (re
 	if transfer != nil {
 		return reflect.ValueOf(transfer), nil
 	} else {
-		return reflect.New(expected).Elem(), nil
+		if expected != nil {
+			return reflect.New(expected).Elem(), nil
+		} else {
+			return reflect.ValueOf(nil), nil
+		}
 	}
 }
 
@@ -235,7 +239,6 @@ func (r *Raev) NewClass(name string, source any, middlewares ...types.ClassMiddl
 	}
 	return r.trans.ToClass(name, c)
 }
-
 
 func NewRaev(zero types.ExtendObject, trans Transfer) *Raev {
 	rv := &Raev{}
