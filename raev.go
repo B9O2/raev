@@ -55,7 +55,7 @@ func (r *Raev) ValueTransfer(value any) (obj types.ExtendObject, err error) {
 			}
 			s = r.trans.AppendSlice(s, obj)
 		}
-		return s, nil
+		value = s
 	case reflect.Map:
 		if v.Len() == 0 {
 			return r.trans.MakeMap(), nil
@@ -75,13 +75,11 @@ func (r *Raev) ValueTransfer(value any) (obj types.ExtendObject, err error) {
 				return r.zeroObj, err
 			}
 		}
-		return m, nil
-
+		value = m
+	}
 	// case reflect.Chan:
 	// 	fmt.Printf("chan %v\n", v.Interface())
-	default:
-		return r.trans.ToObject(value)
-	}
+	return r.trans.ToObject(value)
 
 	//v := reflect.ValueOf(value)
 
