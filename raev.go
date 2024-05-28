@@ -8,17 +8,6 @@ import (
 	"github.com/B9O2/raev/types"
 )
 
-type Transfer interface {
-	ToObject(any) (types.ExtendObject, error)
-	MakeSlice() types.ExtendSlice
-	AppendSlice(types.ExtendSlice, types.ExtendObject) types.ExtendSlice
-	MakeMap() types.ExtendMap
-	SetMap(types.ExtendMap, types.ExtendObject, types.ExtendObject) (types.ExtendMap, error)
-	ToValue(types.ExtendObject) (any, error)
-	ToClass(string, *types.Class) (types.ExtendClass, error)
-	ToMethod(types.Method) (types.ExtendMethod, error)
-}
-
 type Raev struct {
 	zeroObj types.ExtendObject
 	trans   Transfer
@@ -48,6 +37,9 @@ func (r *Raev) ValueTransfer(value any) (obj types.ExtendObject, err error) {
 			return r.trans.MakeSlice(), nil
 		}
 		s := r.trans.MakeSlice()
+		if s == nil {
+			break
+		}
 		for i := 0; i < v.Len(); i++ {
 			obj, err := r.ValueTransfer(v.Index(i).Interface())
 			if err != nil {
@@ -61,6 +53,9 @@ func (r *Raev) ValueTransfer(value any) (obj types.ExtendObject, err error) {
 			return r.trans.MakeMap(), nil
 		}
 		m := r.trans.MakeMap()
+		if m == nil {
+			break
+		}
 		for iter := v.MapRange(); iter.Next(); {
 			key, err := r.ValueTransfer(iter.Key().Interface())
 			if err != nil {
