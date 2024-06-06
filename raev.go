@@ -134,16 +134,39 @@ func (r *Raev) NewRawMethod(name string, vm reflect.Value) (types.Method, error)
 		}()
 
 		l := len(margs)
-		for i := 0; i < vm.Type().NumIn(); i++ {
-			inType := vm.Type().In(i)
-			if i >= l {
-				arguments = append(arguments, reflect.New(inType).Elem())
-			} else {
-				value, err := r.ObjectTransfer(margs[i], inType)
-				if err != nil {
-					return nil, err
+		vmNumIn := vm.Type().NumIn()
+		if l < vmNumIn {
+			for i := 0; i < vmNumIn; i++ {
+				inType := vm.Type().In(i)
+				if i >= l { //less arguments
+					arguments = append(arguments, reflect.New(inType).Elem())
+				} else {
+					value, err := r.ObjectTransfer(margs[i], inType)
+					if err != nil {
+						return nil, err
+					}
+					arguments = append(arguments, value)
 				}
-				arguments = append(arguments, value)
+			}
+		} else {
+			if vm.Type().In(vmNumIn-1).Kind() == reflect.Slice {
+				var inType, finalType reflect.Type
+				for i := 0; i < l; i++ {
+					fmt.Println(margs[i])
+					if i >= vmNumIn-1 { //more arguments
+						inType = finalType
+					} else {
+						inType = vm.Type().In(i)
+					}
+					value, err := r.ObjectTransfer(margs[i], inType)
+					if err != nil {
+						return nil, err
+					}
+					finalType = value.Type()
+					arguments = append(arguments, value)
+				}
+			} else {
+				return nil, errors.New("function '" + name + "' has too many arguments")
 			}
 		}
 
