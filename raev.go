@@ -135,7 +135,7 @@ func (r *Raev) NewRawMethod(name string, vm reflect.Value) (types.Method, error)
 
 		l := len(margs)
 		vmNumIn := vm.Type().NumIn()
-		if l < vmNumIn {
+		if l <= vmNumIn {
 			for i := 0; i < vmNumIn; i++ {
 				inType := vm.Type().In(i)
 				if i >= l { //less arguments
@@ -152,7 +152,6 @@ func (r *Raev) NewRawMethod(name string, vm reflect.Value) (types.Method, error)
 			if vm.Type().In(vmNumIn-1).Kind() == reflect.Slice {
 				var inType, finalType reflect.Type
 				for i := 0; i < l; i++ {
-					fmt.Println(margs[i])
 					if i >= vmNumIn-1 { //more arguments
 						inType = finalType
 					} else {
