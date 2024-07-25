@@ -99,20 +99,15 @@ func (r *Raev) ValueTransfer(value any) (obj types.ExtendObject, err error) {
 
 }
 
-func (r *Raev) ObjectTransfer(obj types.ExtendObject, expected reflect.Type) (reflect.Value, error) {
-	transfer, err := r.trans.ToValue(obj)
+func (r *Raev) ObjectTransfer(obj types.ExtendObject) (reflect.Value, error) {
+	res, err := r.trans.ToValue(obj)
 	if err != nil {
-		return reflect.ValueOf(nil), err
+		return reflect.Value{}, err
 	}
-	if transfer != nil {
-		return reflect.ValueOf(transfer), nil
-	} else {
-		if expected != nil {
-			return reflect.New(expected).Elem(), nil
-		} else {
-			return reflect.ValueOf(nil), nil
-		}
+	if res != nil {
+		return reflect.ValueOf(res), nil
 	}
+	return reflect.Value{}, nil
 }
 
 func (r *Raev) NewMethod(name string, m any) (types.ExtendMethod, error) {
@@ -141,9 +136,12 @@ func (r *Raev) NewRawMethod(name string, vm reflect.Value) (types.Method, error)
 				if i >= l { //less arguments
 					arguments = append(arguments, reflect.New(inType).Elem())
 				} else {
-					value, err := r.ObjectTransfer(margs[i], inType)
+					value, err := r.ObjectTransfer(margs[i])
 					if err != nil {
 						return nil, err
+					}
+					if value.IsZero() {
+						value = reflect.New(inType).Elem()
 					}
 					arguments = append(arguments, value)
 				}
@@ -157,9 +155,12 @@ func (r *Raev) NewRawMethod(name string, vm reflect.Value) (types.Method, error)
 					} else {
 						inType = vm.Type().In(i)
 					}
-					value, err := r.ObjectTransfer(margs[i], inType)
+					value, err := r.ObjectTransfer(margs[i])
 					if err != nil {
 						return nil, err
+					}
+					if value.IsZero() {
+						value = reflect.New(inType).Elem()
 					}
 					finalType = value.Type()
 					arguments = append(arguments, value)
