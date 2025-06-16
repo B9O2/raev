@@ -140,9 +140,9 @@ func (r *Raev) NewRawMethod(name string, vm reflect.Value) (types.Method, error)
 					if err != nil {
 						return nil, err
 					}
-					if value.IsZero() {
-						value = reflect.New(inType).Elem()
-					}
+					// if value.IsZero() {
+					// 	value = reflect.New(inType).Elem()
+					// }
 					arguments = append(arguments, value)
 				}
 			}
